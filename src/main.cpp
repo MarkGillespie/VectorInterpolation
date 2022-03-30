@@ -9,6 +9,7 @@
 #include "args/args.hxx"
 #include "imgui.h"
 
+#include "interpolate_vectors.h"
 #include "utils.h"
 
 using namespace geometrycentral;
@@ -16,7 +17,8 @@ using namespace geometrycentral::surface;
 
 // == Geometry-central data
 std::unique_ptr<ManifoldSurfaceMesh> mesh;
-std::unique_ptr<VertexPositionGeometry> geometry;
+std::unique_ptr<VertexPositionGeometry> geom;
+VertexData<Vector3> boundaryData;
 
 // Polyscope visualization handle, to quickly add data to the surface
 polyscope::SurfaceMesh* psMesh;
@@ -24,7 +26,32 @@ polyscope::SurfaceMesh* psMesh;
 // A user-defined callback, for creating control panels (etc)
 // Use ImGUI commands to build whatever you want here, see
 // https://github.com/ocornut/imgui/blob/master/imgui.h
-void myCallback() {}
+void myCallback() {
+    if (ImGui::Button("Interpolate by harmonic function")) {
+        VertexData<Vector3> interpolatedNormals =
+            interpolateByHarmonicFunction(*mesh, *geom, boundaryData);
+        psMesh->addVertexVectorQuantity("harmonic interpolation",
+                                        interpolatedNormals);
+    }
+    if (ImGui::Button("Interpolate by connection laplacian")) {
+        VertexData<Vector3> interpolatedNormals =
+            interpolateByConnectionLaplacian(*mesh, *geom, boundaryData);
+        psMesh->addVertexVectorQuantity("connection laplacian interpolation",
+                                        interpolatedNormals);
+    }
+    if (ImGui::Button("Interpolate by stereographic projection")) {
+        VertexData<Vector3> interpolatedNormals =
+            interpolateByStereographicProjection(*mesh, *geom, boundaryData);
+        psMesh->addVertexVectorQuantity("stereographic interpolation",
+                                        interpolatedNormals);
+    }
+    if (ImGui::Button("Interpolate by harmonic map to sphere")) {
+        VertexData<Vector3> interpolatedNormals =
+            interpolateByHarmonicMapToSphere(*mesh, *geom, boundaryData);
+        psMesh->addVertexVectorQuantity("harmonic sphere map",
+                                        interpolatedNormals);
+    }
+}
 
 int main(int argc, char** argv) {
 
@@ -58,22 +85,35 @@ int main(int argc, char** argv) {
     polyscope::state::userCallback = myCallback;
 
     // Load mesh
-    std::tie(mesh, geometry) = readManifoldSurfaceMesh(filename);
-    std::cout << "Genus: " << mesh->genus() << std::endl;
+    std::tie(mesh, geom) = readManifoldSurfaceMesh(filename);
+
+    // Center mesh
+    Vector3 avgPos = Vector3::zero();
+    for (Vertex v : mesh->vertices()) {
+        avgPos += geom->vertexPositions[v];
+    }
+    avgPos /= mesh->nVertices();
+    for (Vertex v : mesh->vertices()) {
+        geom->vertexPositions[v] -= avgPos;
+    }
+
+    // Pick some weird boundary data
+    boundaryData = VertexData<Vector3>(*mesh, Vector3::zero());
+    geom->requireVertexNormals();
+    for (BoundaryLoop b : mesh->boundaryLoops()) {
+        for (Vertex v : b.adjacentVertices()) {
+            boundaryData[v] = (geom->vertexPositions[v].normalize() +
+                               2 * geom->vertexNormals[v])
+                                  .normalize();
+        }
+    }
+    geom->unrequireVertexNormals();
 
     // Register the mesh with polyscope
     psMesh = polyscope::registerSurfaceMesh(
-        polyscope::guessNiceNameFromPath(filename), geometry->vertexPositions,
+        polyscope::guessNiceNameFromPath(filename), geom->vertexPositions,
         mesh->getFaceVertexList(), polyscopePermutations(*mesh));
-
-    std::vector<double> vData;
-    vData.reserve(mesh->nVertices());
-    for (size_t iV = 0; iV < mesh->nVertices(); ++iV) {
-        vData.push_back(randomReal(0, 1));
-    }
-
-    auto q = psMesh->addVertexScalarQuantity("data", vData);
-    q->setEnabled(true);
+    psMesh->addVertexVectorQuantity("boundary data", boundaryData);
 
     // Give control to the polyscope gui
     polyscope::show();

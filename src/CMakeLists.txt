@@ -9,17 +9,9 @@ add_executable(
   run
   main.cpp
   utils.cpp
+  interpolate_vectors.cpp
 )
 target_include_directories(run PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 # borrow args.hxx directly from polyscope
 target_include_directories(run PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../deps/polyscope/deps/args/")
 target_link_libraries(run polyscope geometry-central)
-
-option(PACKAGE_TESTS "Build the tests" ON)
-
-if(PACKAGE_TESTS)
-  enable_testing()
-  add_subdirectory(
-    tests
-  )
-endif()
