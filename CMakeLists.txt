@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.10.0)
 
-project(gc_polyscope_example)
+project(vector_field_interpolation)
+message(STATUS "c compiler id: ${CMAKE_C_COMPILER_ID}")
+message(STATUS "cxx compiler id: ${CMAKE_CXX_COMPILER_ID}")
+message(STATUS "Emscripten: ${EMSCRIPTEN}")
 
 # == Export compile commands
 set (CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -23,7 +26,7 @@ if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang" OR "${CMAKE_CXX_COMPILER_ID}" STR
 
   # using Clang (linux or apple) or GCC
   message("Using clang/gcc compiler flags")
-  SET(BASE_CXX_FLAGS "-std=c++11 -Wall -Wextra -Werror -g3")
+  SET(BASE_CXX_FLAGS "-std=c++11 -Wall -Wextra -g3")
   SET(DISABLED_WARNINGS " -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function -Wno-deprecated-declarations -Wno-missing-braces -Wno-unused-private-field -Wno-deprecated-copy -Wno-unknown-warning-option")
   SET(TRACE_INCLUDES " -H -Wno-error=unused-command-line-argument")
 
@@ -63,5 +66,27 @@ endif()
 
 # == Deps
 add_subdirectory(deps/geometry-central)
-add_subdirectory(deps/polyscope)
-add_subdirectory(src)
+
+if (EMSCRIPTEN)
+  set(SRCS
+    src/embind.cpp
+    src/interpolate_vectors.cpp
+    )
+
+  add_executable(embind "${SRCS}")
+  target_include_directories(embind PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/")
+  target_link_libraries(embind geometry-central)
+  set_target_properties(embind PROPERTIES LINK_FLAGS "-s DEMANGLE_SUPPORT=1 -s ALLOW_MEMORY_GROWTH=1 --bind --memory-init-file 0")
+else()
+  # only include polyscope for gui build
+  add_subdirectory(deps/polyscope)
+
+  set(SRCS
+    src/main.cpp
+    src/interpolate_vectors.cpp
+    )
+
+  add_executable(run "${SRCS}")
+  target_include_directories(run PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/" "${CMAKE_CURRENT_SOURCE_DIR}/deps/polyscope/deps/glm" "${CMAKE_CURRENT_SOURCE_DIR}/deps/polyscope/deps/args")
+  target_link_libraries(run geometry-central polyscope)
+endif()
