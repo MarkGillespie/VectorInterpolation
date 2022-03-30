@@ -10,7 +10,6 @@
 #include "imgui.h"
 
 #include "interpolate_vectors.h"
-#include "utils.h"
 
 using namespace geometrycentral;
 using namespace geometrycentral::surface;
@@ -71,6 +70,7 @@ void myCallback() {
             }
         }
         geom->unrequireVertexNormals();
+        psMesh->addVertexVectorQuantity("boundary data", boundaryData);
     }
     if (ImGui::Button("Set wavy boundary conditions")) {
         boundaryData = VertexData<Vector3>(*mesh, Vector3::zero());
@@ -95,6 +95,7 @@ void myCallback() {
             }
         }
         geom->unrequireVertexNormals();
+        psMesh->addVertexVectorQuantity("boundary data", boundaryData);
     }
 }
 
@@ -159,8 +160,6 @@ int main(int argc, char** argv) {
                                             mesh->getFaceVertexList(),
                                             polyscopePermutations(*mesh));
     psMesh->addVertexVectorQuantity("boundary data", boundaryData);
-
-    checkSphericalDirichletGradient(*mesh, *geom, boundaryData);
 
     // Give control to the polyscope gui
     polyscope::show();

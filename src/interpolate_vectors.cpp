@@ -120,11 +120,13 @@ VertexData<Vector3> interpolateByConnectionLaplacian(
                 intrinsicVec /= vecNorm;
                 z /= vecNorm;
             } else {
-                double z2 = 1 - intrinsicVec.norm();
-                if (z2 < 0) {
-                    std::cout << "Err: z^2 < 0" << vendl;
+                if (intrinsicVec.norm() >= 1) {
+                    intrinsicVec = intrinsicVec.normalize();
+                    z            = 0;
+                } else {
+                    double z2 = 1 - intrinsicVec.norm();
+                    z         = sqrt(fmax(z2, 0));
                 }
-                z = sqrt(fmax(z2, 0));
             }
 
             Vector3 T0 = geom.vertexTangentBasis[v][0];
@@ -391,41 +393,4 @@ double dot(const VertexData<Vector3>& a, const VertexData<Vector3>& b) {
         result += dot(a[i], b[i]);
     }
     return result;
-}
-
-void checkSphericalDirichletGradient(ManifoldSurfaceMesh& mesh,
-                                     VertexPositionGeometry& geom,
-                                     VertexData<Vector3> boundaryData) {
-    VertexData<Vector3> f =
-        interpolateByHarmonicFunction(mesh, geom, boundaryData);
-
-    double h          = 1e-8;
-    double origEnergy = computeSphericalDirichletEnergy(mesh, geom, f);
-    VertexData<Vector3> origGrad =
-        computeSphericalDirichletGradient(mesh, geom, f);
-    for (size_t i = 0; i < 25; i++) {
-        VertexData<Vector3> perturbation(mesh);
-        for (Vertex v : mesh.vertices()) {
-            if (v.isBoundary()) {
-                perturbation[v] = Vector3::zero();
-            } else {
-                perturbation[v] = Vector3{randomReal(-1, 1), randomReal(-1, 1),
-                                          randomReal(-1, 1)};
-                perturbation[v] -= dot(perturbation[v], f[v]) * f[v];
-            }
-        }
-
-        VertexData<Vector3> newF =
-            takeSphericalStep(mesh, geom, f, perturbation, h);
-        double newEnergy = computeSphericalDirichletEnergy(mesh, geom, newF);
-
-        double finite_diff   = (newEnergy - origEnergy) / h;
-        double analytic_diff = dot(origGrad, perturbation);
-
-        if (!(abs(finite_diff - analytic_diff) < 1e-3)) {
-            WATCH3(finite_diff, analytic_diff,
-                   abs(finite_diff - analytic_diff));
-        }
-        verbose_assert(abs(finite_diff - analytic_diff) < 1e-3, "err");
-    }
 }

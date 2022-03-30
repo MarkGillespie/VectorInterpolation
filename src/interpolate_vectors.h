@@ -6,8 +6,6 @@
 #include "geometrycentral/surface/meshio.h"
 #include "geometrycentral/surface/vertex_position_geometry.h"
 
-#include "utils.h"
-
 using namespace geometrycentral;
 using namespace geometrycentral::surface;
 
@@ -58,8 +56,3 @@ VertexData<Vector3> takeSphericalStep(ManifoldSurfaceMesh& mesh,
 
 double norm(const VertexData<Vector3>& f);
 double dot(const VertexData<Vector3>& a, const VertexData<Vector3>& b);
-
-
-void checkSphericalDirichletGradient(ManifoldSurfaceMesh& mesh,
-                                     VertexPositionGeometry& geom,
-                                     VertexData<Vector3> boundaryData);

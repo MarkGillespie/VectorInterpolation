@@ -8,7 +8,6 @@ endif()
 add_executable(
   run
   main.cpp
-  utils.cpp
   interpolate_vectors.cpp
 )
 target_include_directories(run PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../include")
