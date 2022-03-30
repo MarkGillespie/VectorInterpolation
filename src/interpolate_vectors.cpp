@@ -182,8 +182,6 @@ VertexData<Vector3>
 interpolateByHarmonicMapToSphere(ManifoldSurfaceMesh& mesh,
                                  VertexPositionGeometry& geom,
                                  const VertexData<Vector3>& boundaryData) {
-    auto origMesh = polyscope::getSurfaceMesh("mesh");
-
     // just get some initial guess
     VertexData<Vector3> f =
         interpolateByHarmonicFunction(mesh, geom, boundaryData);
@@ -198,14 +196,6 @@ interpolateByHarmonicMapToSphere(ManifoldSurfaceMesh& mesh,
             nB++;
         }
     }
-
-    auto psMesh = polyscope::registerSurfaceMesh(
-        "Sphere map", f, mesh.getFaceVertexList(), polyscopePermutations(mesh));
-    psMesh->addVertexScalarQuantity("Is interior", isInterior);
-    psMesh->addVertexScalarQuantity("vIdx", vIdx);
-    origMesh->addVertexScalarQuantity("Is interior", isInterior);
-    origMesh->addVertexVectorQuantity("f initial", f);
-    origMesh->addVertexScalarQuantity("vIdx", vIdx);
 
     BlockDecompositionResult<double> decomp =
         blockDecomposeSquare(geom.cotanLaplacian, isInterior);
@@ -224,40 +214,24 @@ interpolateByHarmonicMapToSphere(ManifoldSurfaceMesh& mesh,
 
         double oldEnergy = computeSphericalDirichletEnergy(mesh, geom, f);
         double newEnergy = computeSphericalDirichletEnergy(mesh, geom, newF);
-        double targetEnergyDecrease = sqrt(abs(dot(grad, stepDir)));
 
-        while (
-            stepSize > 1e-8 &&
-            (!std::isfinite(newEnergy) ||
-             oldEnergy - newEnergy < 0.01 * stepSize * targetEnergyDecrease)) {
+        while (stepSize > 1e-8 &&
+               (!std::isfinite(newEnergy) || oldEnergy < newEnergy)) {
             stepSize /= 2;
 
             newF      = takeSphericalStep(mesh, geom, f, stepDir, stepSize);
             newEnergy = computeSphericalDirichletEnergy(mesh, geom, newF);
-            std::cout << "\t with step size " << stepSize
-                      << " the new energy is " << newEnergy
-                      << " making a decrease of " << oldEnergy - newEnergy
-                      << " (should be positive)" << vendl;
         }
 
         f    = newF;
         grad = computeSphericalDirichletGradient(mesh, geom, f);
-
-        psMesh->updateVertexPositions(f);
-        psMesh->addVertexVectorQuantity("grad", grad);
-        psMesh->addVertexVectorQuantity("step dir", stepDir);
-
-        std::cout << "On iteration " << steps << " the energy is " << newEnergy
-                  << " and the gradient norm is " << norm(grad) << vendl;
-
-        polyscope::show();
 
         steps++;
     }
 
     geom.unrequireCotanLaplacian();
 
-    return boundaryData;
+    return f;
 }
 
 Vector2 projectStereographic(Vector3 v) {
@@ -279,7 +253,7 @@ double computeSphericalDirichletEnergy(ManifoldSurfaceMesh& mesh,
     for (Edge e : mesh.edges()) {
         Vector3 fi = f[e.halfedge().tailVertex()];
         Vector3 fj = f[e.halfedge().tipVertex()];
-        energy += geom.edgeCotanWeights[e] * angle(fi, fj);
+        energy += geom.edgeCotanWeights[e] * pow(angle(fi, fj), 2) / 2.;
     }
 
     geom.unrequireEdgeCotanWeights();
@@ -310,17 +284,7 @@ computeSphericalDirichletGradient(ManifoldSurfaceMesh& mesh,
                     T = Vector3::zero();
                 }
 
-                Vector3 contribution =
-                    -geom.edgeCotanWeights[ij.edge()] * angle(fi, fj) * T;
-
-                // if (!std::isfinite(contribution.norm())) {
-                //     WATCH(geom.edgeCotanWeights[ij.edge()]);
-                //     WATCH(angle(fi, fj));
-                //     WATCH(N);
-                //     WATCH(T);
-                // }
-
-                grad[i] += contribution;
+                grad[i] -= geom.edgeCotanWeights[ij.edge()] * angle(fi, fj) * T;
             }
         }
     }
@@ -386,12 +350,29 @@ VertexData<Vector3> takeSphericalStep(ManifoldSurfaceMesh& mesh,
         if (!i.isBoundary()) {
             Vector3 p    = f[i];
             Vector3 u    = stepDir[i] * stepSize;
-            Vector3 axis = u.normalize();
-            double angle = u.norm();
+            Vector3 axis = cross(p, u).normalize();
+            double theta = u.norm();
 
-            // rotate p around axis by angle
-            result[i] = p * cos(angle) + cross(axis, p) * sin(angle) +
-                        axis * dot(axis, p) * (1 - cos(angle));
+            // rotate p around axis by theta
+            result[i] = p * cos(theta) + cross(axis, p) * sin(theta) +
+                        axis * dot(axis, p) * (1 - cos(theta));
+
+            // Check
+            if (!(abs(theta - angle(result[i], p)) < 1e-4)) {
+                WATCH2(theta, angle(result[i], p));
+            }
+            verbose_assert(abs(theta - angle(result[i], p)) < 1e-4,
+                           "rotated by wrong amount");
+            Vector3 dir = result[i] - p;
+            dir -= p * dot(p, dir) / p.norm2();
+            dir = dir.normalize();
+
+            if (!((dir - u.normalize()).norm() < 1e-4)) {
+                WATCH3(dir, u.normalize(), (dir - u.normalize()).norm());
+                WATCH(dot(dir, axis));
+            }
+            verbose_assert((dir - u.normalize()).norm() < 1e-4,
+                           "stepped in wrong direction");
         }
     }
 
@@ -412,4 +393,41 @@ double dot(const VertexData<Vector3>& a, const VertexData<Vector3>& b) {
         result += dot(a[i], b[i]);
     }
     return result;
+}
+
+void checkSphericalDirichletGradient(ManifoldSurfaceMesh& mesh,
+                                     VertexPositionGeometry& geom,
+                                     VertexData<Vector3> boundaryData) {
+    VertexData<Vector3> f =
+        interpolateByHarmonicFunction(mesh, geom, boundaryData);
+
+    double h          = 1e-8;
+    double origEnergy = computeSphericalDirichletEnergy(mesh, geom, f);
+    VertexData<Vector3> origGrad =
+        computeSphericalDirichletGradient(mesh, geom, f);
+    for (size_t i = 0; i < 25; i++) {
+        VertexData<Vector3> perturbation(mesh);
+        for (Vertex v : mesh.vertices()) {
+            if (v.isBoundary()) {
+                perturbation[v] = Vector3::zero();
+            } else {
+                perturbation[v] = Vector3{randomReal(-1, 1), randomReal(-1, 1),
+                                          randomReal(-1, 1)};
+                perturbation[v] -= dot(perturbation[v], f[v]) * f[v];
+            }
+        }
+
+        VertexData<Vector3> newF =
+            takeSphericalStep(mesh, geom, f, perturbation, h);
+        double newEnergy = computeSphericalDirichletEnergy(mesh, geom, newF);
+
+        double finite_diff   = (newEnergy - origEnergy) / h;
+        double analytic_diff = dot(origGrad, perturbation);
+
+        if (!(abs(finite_diff - analytic_diff) < 1e-3)) {
+            WATCH3(finite_diff, analytic_diff,
+                   abs(finite_diff - analytic_diff));
+        }
+        verbose_assert(abs(finite_diff - analytic_diff) < 1e-3, "err");
+    }
 }

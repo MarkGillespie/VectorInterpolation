@@ -59,3 +59,8 @@ VertexData<Vector3> takeSphericalStep(ManifoldSurfaceMesh& mesh,
 
 double norm(const VertexData<Vector3>& f);
 double dot(const VertexData<Vector3>& a, const VertexData<Vector3>& b);
+
+
+void checkSphericalDirichletGradient(ManifoldSurfaceMesh& mesh,
+                                     VertexPositionGeometry& geom,
+                                     VertexData<Vector3> boundaryData);

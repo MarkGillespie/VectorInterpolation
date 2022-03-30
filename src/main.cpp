@@ -101,10 +101,21 @@ int main(int argc, char** argv) {
     boundaryData = VertexData<Vector3>(*mesh, Vector3::zero());
     geom->requireVertexNormals();
     for (BoundaryLoop b : mesh->boundaryLoops()) {
-        for (Vertex v : b.adjacentVertices()) {
-            boundaryData[v] = (geom->vertexPositions[v].normalize() +
-                               2 * geom->vertexNormals[v])
-                                  .normalize();
+        size_t iHe = 0;
+        for (Halfedge ij : b.adjacentHalfedges()) {
+            Vertex i   = ij.tailVertex();
+            Vertex j   = ij.tipVertex();
+            Vector3 Ni = geom->vertexNormals[i];
+            Vector3 Ti = (geom->vertexPositions[j] - geom->vertexPositions[i])
+                             .normalize();
+            Vector3 Bi = cross(Ti, Ni);
+
+            // boundaryData[i] = (geom->vertexPositions[i].normalize() + 2 *
+            // Ni).normalize();
+            double t        = iHe / ((double)b.degree()) * 2 * M_PI;
+            boundaryData[i] = cos(t) * Ni + sin(t) * Bi;
+
+            iHe++;
         }
     }
     geom->unrequireVertexNormals();
@@ -114,6 +125,8 @@ int main(int argc, char** argv) {
                                             mesh->getFaceVertexList(),
                                             polyscopePermutations(*mesh));
     psMesh->addVertexVectorQuantity("boundary data", boundaryData);
+
+    checkSphericalDirichletGradient(*mesh, *geom, boundaryData);
 
     // Give control to the polyscope gui
     polyscope::show();
