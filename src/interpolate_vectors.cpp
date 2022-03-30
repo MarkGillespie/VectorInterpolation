@@ -182,6 +182,8 @@ VertexData<Vector3>
 interpolateByHarmonicMapToSphere(ManifoldSurfaceMesh& mesh,
                                  VertexPositionGeometry& geom,
                                  const VertexData<Vector3>& boundaryData) {
+    auto origMesh = polyscope::getSurfaceMesh("mesh");
+
     // just get some initial guess
     VertexData<Vector3> f =
         interpolateByHarmonicFunction(mesh, geom, boundaryData);
@@ -200,6 +202,10 @@ interpolateByHarmonicMapToSphere(ManifoldSurfaceMesh& mesh,
     auto psMesh = polyscope::registerSurfaceMesh(
         "Sphere map", f, mesh.getFaceVertexList(), polyscopePermutations(mesh));
     psMesh->addVertexScalarQuantity("Is interior", isInterior);
+    psMesh->addVertexScalarQuantity("vIdx", vIdx);
+    origMesh->addVertexScalarQuantity("Is interior", isInterior);
+    origMesh->addVertexVectorQuantity("f initial", f);
+    origMesh->addVertexScalarQuantity("vIdx", vIdx);
 
     BlockDecompositionResult<double> decomp =
         blockDecomposeSquare(geom.cotanLaplacian, isInterior);
@@ -377,14 +383,16 @@ VertexData<Vector3> takeSphericalStep(ManifoldSurfaceMesh& mesh,
     VertexData<Vector3> result = f;
 
     for (Vertex i : mesh.vertices()) {
-        Vector3 p    = f[i];
-        Vector3 u    = stepDir[i] * stepSize;
-        Vector3 axis = u.normalize();
-        double angle = u.norm();
+        if (!i.isBoundary()) {
+            Vector3 p    = f[i];
+            Vector3 u    = stepDir[i] * stepSize;
+            Vector3 axis = u.normalize();
+            double angle = u.norm();
 
-        // rotate p around axis by angle
-        result[i] = p * cos(angle) + cross(axis, p) * sin(angle) +
-                    axis * dot(axis, p) * (1 - cos(angle));
+            // rotate p around axis by angle
+            result[i] = p * cos(angle) + cross(axis, p) * sin(angle) +
+                        axis * dot(axis, p) * (1 - cos(angle));
+        }
     }
 
     return result;

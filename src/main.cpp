@@ -110,9 +110,9 @@ int main(int argc, char** argv) {
     geom->unrequireVertexNormals();
 
     // Register the mesh with polyscope
-    psMesh = polyscope::registerSurfaceMesh(
-        polyscope::guessNiceNameFromPath(filename), geom->vertexPositions,
-        mesh->getFaceVertexList(), polyscopePermutations(*mesh));
+    psMesh = polyscope::registerSurfaceMesh("mesh", geom->vertexPositions,
+                                            mesh->getFaceVertexList(),
+                                            polyscopePermutations(*mesh));
     psMesh->addVertexVectorQuantity("boundary data", boundaryData);
 
     // Give control to the polyscope gui
