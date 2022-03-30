@@ -5,7 +5,6 @@ interpolateByHarmonicFunction(ManifoldSurfaceMesh& mesh,
                               VertexPositionGeometry& geom,
                               const VertexData<Vector3>& boundaryData) {
     geom.requireCotanLaplacian();
-    geom.requireVertexDualAreas();
     geom.requireVertexIndices();
 
     VertexData<size_t>& vIdx = geom.vertexIndices;
@@ -25,8 +24,7 @@ interpolateByHarmonicFunction(ManifoldSurfaceMesh& mesh,
     Vector<double> boundaryX(nB), boundaryY(nB), boundaryZ(nB);
     for (BoundaryLoop b : mesh.boundaryLoops()) {
         for (Vertex v : b.adjacentVertices()) {
-            Vector3 boundaryVec =
-                geom.vertexDualAreas[v] * boundaryData[v].normalize();
+            Vector3 boundaryVec = boundaryData[v].normalize();
 
             boundaryX(decomp.newInds(vIdx[v])) = boundaryVec.x;
             boundaryY(decomp.newInds(vIdx[v])) = boundaryVec.y;
@@ -51,19 +49,16 @@ interpolateByHarmonicFunction(ManifoldSurfaceMesh& mesh,
     }
 
     geom.unrequireCotanLaplacian();
-    geom.unrequireVertexDualAreas();
     geom.unrequireVertexIndices();
 
     return solution;
 }
 
-VertexData<Vector3>
-interpolateByConnectionLaplacian(ManifoldSurfaceMesh& mesh,
-                                 VertexPositionGeometry& geom,
-                                 const VertexData<Vector3>& boundaryData) {
+VertexData<Vector3> interpolateByConnectionLaplacian(
+    ManifoldSurfaceMesh& mesh, VertexPositionGeometry& geom,
+    const VertexData<Vector3>& boundaryData, bool estimateNormalDirection) {
     geom.requireVertexConnectionLaplacian();
     geom.requireVertexTangentBasis();
-    geom.requireVertexDualAreas();
     geom.requireVertexIndices();
 
     VertexData<size_t>& vIdx = geom.vertexIndices;
@@ -81,14 +76,20 @@ interpolateByConnectionLaplacian(ManifoldSurfaceMesh& mesh,
         blockDecomposeSquare(geom.vertexConnectionLaplacian, isInterior);
 
     Vector<std::complex<double>> intrinsicBoundary(nB);
+    Vector<double> boundaryNormals;
+    if (estimateNormalDirection) boundaryNormals = Vector<double>(nB);
     for (BoundaryLoop b : mesh.boundaryLoops()) {
         for (Vertex v : b.adjacentVertices()) {
             Vector3 extVec = boundaryData[v];
             Vector2 intrinsicVec{dot(extVec, geom.vertexTangentBasis[v][0]),
                                  dot(extVec, geom.vertexTangentBasis[v][1])};
 
-            intrinsicBoundary(decomp.newInds(vIdx[v])) =
-                geom.vertexDualAreas[v] * intrinsicVec;
+            intrinsicBoundary(decomp.newInds(vIdx[v])) = intrinsicVec;
+            if (estimateNormalDirection) {
+                Vector3 N = cross(geom.vertexTangentBasis[v][0],
+                                  geom.vertexTangentBasis[v][1]);
+                boundaryNormals(decomp.newInds(vIdx[v])) = dot(extVec, N);
+            }
         }
     }
 
@@ -96,16 +97,36 @@ interpolateByConnectionLaplacian(ManifoldSurfaceMesh& mesh,
     Vector<std::complex<double>> solution =
         solvePositiveDefinite(decomp.AA, rhs);
 
+    Vector<double> solutionNormals;
+    if (estimateNormalDirection) {
+        geom.requireCotanLaplacian();
+        BlockDecompositionResult<double> scalarDecomp =
+            blockDecomposeSquare(geom.cotanLaplacian, decomp.isA);
+        Vector<double> scalarRHS = -scalarDecomp.AB * boundaryNormals;
+        solutionNormals = solvePositiveDefinite(scalarDecomp.AA, scalarRHS);
+        geom.unrequireCotanLaplacian();
+    }
+
     VertexData<Vector3> solutionData = boundaryData;
     for (Vertex v : mesh.vertices()) {
         if (isInterior(vIdx[v])) {
             Vector2 intrinsicVec =
                 Vector2::fromComplex(solution(decomp.newInds(vIdx[v])));
-            double z2 = 1 - intrinsicVec.norm();
-            if (z2 < 0) {
-                std::cout << "Err: z^2 < 0" << vendl;
+            double z;
+
+            if (estimateNormalDirection) {
+                z              = solutionNormals(decomp.newInds(vIdx[v]));
+                double vecNorm = sqrt(fmax(0, intrinsicVec.norm2() + z * z));
+                intrinsicVec /= vecNorm;
+                z /= vecNorm;
+            } else {
+                double z2 = 1 - intrinsicVec.norm();
+                if (z2 < 0) {
+                    std::cout << "Err: z^2 < 0" << vendl;
+                }
+                z = sqrt(fmax(z2, 0));
             }
-            double z   = sqrt(fmax(z2, 0));
+
             Vector3 T0 = geom.vertexTangentBasis[v][0];
             Vector3 T1 = geom.vertexTangentBasis[v][1];
             Vector3 N  = cross(T0, T1);
@@ -116,7 +137,6 @@ interpolateByConnectionLaplacian(ManifoldSurfaceMesh& mesh,
 
     geom.requireVertexConnectionLaplacian();
     geom.requireVertexTangentBasis();
-    geom.unrequireVertexDualAreas();
     geom.unrequireVertexIndices();
 
     return solutionData;
@@ -127,7 +147,6 @@ interpolateByStereographicProjection(ManifoldSurfaceMesh& mesh,
                                      VertexPositionGeometry& geom,
                                      const VertexData<Vector3>& boundaryData) {
     geom.requireCotanLaplacian();
-    geom.requireVertexDualAreas();
     geom.requireVertexIndices();
 
     VertexData<size_t>& vIdx = geom.vertexIndices;
@@ -148,12 +167,9 @@ interpolateByStereographicProjection(ManifoldSurfaceMesh& mesh,
     for (BoundaryLoop b : mesh.boundaryLoops()) {
         for (Vertex v : b.adjacentVertices()) {
             Vector2 projectedVec = projectStereographic(boundaryData[v]);
-            // Note: originally, I multiplied by vertex dual area, but that gave
-            // really bad results. I'm not sure why
-            Vector2 boundaryVec = projectedVec;
 
-            boundaryX(decomp.newInds(vIdx[v])) = boundaryVec.x;
-            boundaryY(decomp.newInds(vIdx[v])) = boundaryVec.y;
+            boundaryX(decomp.newInds(vIdx[v])) = projectedVec.x;
+            boundaryY(decomp.newInds(vIdx[v])) = projectedVec.y;
         }
     }
 
@@ -172,7 +188,6 @@ interpolateByStereographicProjection(ManifoldSurfaceMesh& mesh,
     }
 
     geom.unrequireCotanLaplacian();
-    geom.unrequireVertexDualAreas();
     geom.unrequireVertexIndices();
 
     return solution;
@@ -356,23 +371,6 @@ VertexData<Vector3> takeSphericalStep(ManifoldSurfaceMesh& mesh,
             // rotate p around axis by theta
             result[i] = p * cos(theta) + cross(axis, p) * sin(theta) +
                         axis * dot(axis, p) * (1 - cos(theta));
-
-            // Check
-            if (!(abs(theta - angle(result[i], p)) < 1e-4)) {
-                WATCH2(theta, angle(result[i], p));
-            }
-            verbose_assert(abs(theta - angle(result[i], p)) < 1e-4,
-                           "rotated by wrong amount");
-            Vector3 dir = result[i] - p;
-            dir -= p * dot(p, dir) / p.norm2();
-            dir = dir.normalize();
-
-            if (!((dir - u.normalize()).norm() < 1e-4)) {
-                WATCH3(dir, u.normalize(), (dir - u.normalize()).norm());
-                WATCH(dot(dir, axis));
-            }
-            verbose_assert((dir - u.normalize()).norm() < 1e-4,
-                           "stepped in wrong direction");
         }
     }
 

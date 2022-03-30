@@ -6,8 +6,6 @@
 #include "geometrycentral/surface/meshio.h"
 #include "geometrycentral/surface/vertex_position_geometry.h"
 
-#include "polyscope/surface_mesh.h"
-
 #include "utils.h"
 
 using namespace geometrycentral;
@@ -21,7 +19,8 @@ interpolateByHarmonicFunction(ManifoldSurfaceMesh& mesh,
 VertexData<Vector3>
 interpolateByConnectionLaplacian(ManifoldSurfaceMesh& mesh,
                                  VertexPositionGeometry& geom,
-                                 const VertexData<Vector3>& boundaryData);
+                                 const VertexData<Vector3>& boundaryData,
+                                 bool estimateNormalDirection = false);
 
 VertexData<Vector3>
 interpolateByStereographicProjection(ManifoldSurfaceMesh& mesh,

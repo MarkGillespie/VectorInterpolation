@@ -35,9 +35,17 @@ void myCallback() {
     }
     if (ImGui::Button("Interpolate by connection laplacian")) {
         VertexData<Vector3> interpolatedNormals =
-            interpolateByConnectionLaplacian(*mesh, *geom, boundaryData);
-        psMesh->addVertexVectorQuantity("connection laplacian interpolation",
-                                        interpolatedNormals);
+            interpolateByConnectionLaplacian(*mesh, *geom, boundaryData, false);
+        psMesh->addVertexVectorQuantity(
+            "pure connection laplacian interpolation", interpolatedNormals);
+    }
+    if (ImGui::Button(
+            "Interpolate by connection laplacian + scalar laplacian")) {
+        VertexData<Vector3> interpolatedNormals =
+            interpolateByConnectionLaplacian(*mesh, *geom, boundaryData, true);
+        psMesh->addVertexVectorQuantity(
+            "connection laplacian + scalar laplacian interpolation",
+            interpolatedNormals);
     }
     if (ImGui::Button("Interpolate by stereographic projection")) {
         VertexData<Vector3> interpolatedNormals =
@@ -50,6 +58,43 @@ void myCallback() {
             interpolateByHarmonicMapToSphere(*mesh, *geom, boundaryData);
         psMesh->addVertexVectorQuantity("harmonic sphere map",
                                         interpolatedNormals);
+    }
+    ImGui::Separator();
+    if (ImGui::Button("Set smooth boundary conditions")) {
+        boundaryData = VertexData<Vector3>(*mesh, Vector3::zero());
+        geom->requireVertexNormals();
+        for (BoundaryLoop b : mesh->boundaryLoops()) {
+            for (Vertex i : b.adjacentVertices()) {
+                Vector3 Ni = geom->vertexNormals[i];
+                boundaryData[i] =
+                    (geom->vertexPositions[i].normalize() + 2 * Ni).normalize();
+            }
+        }
+        geom->unrequireVertexNormals();
+    }
+    if (ImGui::Button("Set wavy boundary conditions")) {
+        boundaryData = VertexData<Vector3>(*mesh, Vector3::zero());
+        geom->requireVertexNormals();
+        for (BoundaryLoop b : mesh->boundaryLoops()) {
+            size_t iHe = 0;
+            for (Halfedge ij : b.adjacentHalfedges()) {
+                Vertex i   = ij.tailVertex();
+                Vertex j   = ij.tipVertex();
+                Vector3 Ni = geom->vertexNormals[i];
+                Vector3 Ti =
+                    (geom->vertexPositions[j] - geom->vertexPositions[i])
+                        .normalize();
+                Vector3 Bi = cross(Ti, Ni);
+
+                // boundaryData[i] = (geom->vertexPositions[i].normalize() + 2 *
+                // Ni).normalize();
+                double t        = iHe / ((double)b.degree()) * 2 * M_PI;
+                boundaryData[i] = cos(t) * Ni + sin(t) * Bi;
+
+                iHe++;
+            }
+        }
+        geom->unrequireVertexNormals();
     }
 }
 
@@ -101,21 +146,10 @@ int main(int argc, char** argv) {
     boundaryData = VertexData<Vector3>(*mesh, Vector3::zero());
     geom->requireVertexNormals();
     for (BoundaryLoop b : mesh->boundaryLoops()) {
-        size_t iHe = 0;
-        for (Halfedge ij : b.adjacentHalfedges()) {
-            Vertex i   = ij.tailVertex();
-            Vertex j   = ij.tipVertex();
+        for (Vertex i : b.adjacentVertices()) {
             Vector3 Ni = geom->vertexNormals[i];
-            Vector3 Ti = (geom->vertexPositions[j] - geom->vertexPositions[i])
-                             .normalize();
-            Vector3 Bi = cross(Ti, Ni);
-
-            // boundaryData[i] = (geom->vertexPositions[i].normalize() + 2 *
-            // Ni).normalize();
-            double t        = iHe / ((double)b.degree()) * 2 * M_PI;
-            boundaryData[i] = cos(t) * Ni + sin(t) * Bi;
-
-            iHe++;
+            boundaryData[i] =
+                (geom->vertexPositions[i].normalize() + 2 * Ni).normalize();
         }
     }
     geom->unrequireVertexNormals();
