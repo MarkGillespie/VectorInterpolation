@@ -60,41 +60,11 @@ void myCallback() {
     }
     ImGui::Separator();
     if (ImGui::Button("Set smooth boundary conditions")) {
-        boundaryData = VertexData<Vector3>(*mesh, Vector3::zero());
-        geom->requireVertexNormals();
-        for (BoundaryLoop b : mesh->boundaryLoops()) {
-            for (Vertex i : b.adjacentVertices()) {
-                Vector3 Ni = geom->vertexNormals[i];
-                boundaryData[i] =
-                    (geom->vertexPositions[i].normalize() + 2 * Ni).normalize();
-            }
-        }
-        geom->unrequireVertexNormals();
+        boundaryData = generateSmoothBoundaryVectorField(*mesh, *geom);
         psMesh->addVertexVectorQuantity("boundary data", boundaryData);
     }
     if (ImGui::Button("Set wavy boundary conditions")) {
-        boundaryData = VertexData<Vector3>(*mesh, Vector3::zero());
-        geom->requireVertexNormals();
-        for (BoundaryLoop b : mesh->boundaryLoops()) {
-            size_t iHe = 0;
-            for (Halfedge ij : b.adjacentHalfedges()) {
-                Vertex i   = ij.tailVertex();
-                Vertex j   = ij.tipVertex();
-                Vector3 Ni = geom->vertexNormals[i];
-                Vector3 Ti =
-                    (geom->vertexPositions[j] - geom->vertexPositions[i])
-                        .normalize();
-                Vector3 Bi = cross(Ti, Ni);
-
-                // boundaryData[i] = (geom->vertexPositions[i].normalize() + 2 *
-                // Ni).normalize();
-                double t        = iHe / ((double)b.degree()) * 2 * M_PI;
-                boundaryData[i] = cos(t) * Ni + sin(t) * Bi;
-
-                iHe++;
-            }
-        }
-        geom->unrequireVertexNormals();
+        boundaryData = generateWavyBoundaryVectorField(*mesh, *geom);
         psMesh->addVertexVectorQuantity("boundary data", boundaryData);
     }
 }
@@ -143,22 +113,11 @@ int main(int argc, char** argv) {
         geom->vertexPositions[v] -= avgPos;
     }
 
-    // Pick some weird boundary data
-    boundaryData = VertexData<Vector3>(*mesh, Vector3::zero());
-    geom->requireVertexNormals();
-    for (BoundaryLoop b : mesh->boundaryLoops()) {
-        for (Vertex i : b.adjacentVertices()) {
-            Vector3 Ni = geom->vertexNormals[i];
-            boundaryData[i] =
-                (geom->vertexPositions[i].normalize() + 2 * Ni).normalize();
-        }
-    }
-    geom->unrequireVertexNormals();
-
     // Register the mesh with polyscope
-    psMesh = polyscope::registerSurfaceMesh("mesh", geom->vertexPositions,
+    psMesh       = polyscope::registerSurfaceMesh("mesh", geom->vertexPositions,
                                             mesh->getFaceVertexList(),
                                             polyscopePermutations(*mesh));
+    boundaryData = generateSmoothBoundaryVectorField(*mesh, *geom);
     psMesh->addVertexVectorQuantity("boundary data", boundaryData);
 
     // Give control to the polyscope gui

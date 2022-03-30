@@ -56,3 +56,11 @@ VertexData<Vector3> takeSphericalStep(ManifoldSurfaceMesh& mesh,
 
 double norm(const VertexData<Vector3>& f);
 double dot(const VertexData<Vector3>& a, const VertexData<Vector3>& b);
+
+VertexData<Vector3>
+generateSmoothBoundaryVectorField(ManifoldSurfaceMesh& mesh,
+                                  VertexPositionGeometry& geom);
+VertexData<Vector3>
+generateWavyBoundaryVectorField(ManifoldSurfaceMesh& mesh,
+                                VertexPositionGeometry& geom,
+                                size_t frequency = 1);

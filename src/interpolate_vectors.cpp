@@ -394,3 +394,42 @@ double dot(const VertexData<Vector3>& a, const VertexData<Vector3>& b) {
     }
     return result;
 }
+
+VertexData<Vector3>
+generateSmoothBoundaryVectorField(ManifoldSurfaceMesh& mesh,
+                                  VertexPositionGeometry& geom) {
+    VertexData<Vector3> boundaryData(mesh, Vector3::zero());
+    geom.requireVertexNormals();
+    for (BoundaryLoop b : mesh.boundaryLoops()) {
+        for (Vertex i : b.adjacentVertices()) {
+            Vector3 Ni = geom.vertexNormals[i];
+            boundaryData[i] =
+                (geom.vertexPositions[i].normalize() + 2 * Ni).normalize();
+        }
+    }
+    geom.unrequireVertexNormals();
+    return boundaryData;
+}
+VertexData<Vector3> generateWavyBoundaryVectorField(
+    ManifoldSurfaceMesh& mesh, VertexPositionGeometry& geom, size_t frequency) {
+    VertexData<Vector3> boundaryData(mesh, Vector3::zero());
+    geom.requireVertexNormals();
+    for (BoundaryLoop b : mesh.boundaryLoops()) {
+        size_t iHe = 0;
+        for (Halfedge ij : b.adjacentHalfedges()) {
+            Vertex i   = ij.tailVertex();
+            Vertex j   = ij.tipVertex();
+            Vector3 Ni = geom.vertexNormals[i];
+            Vector3 Ti =
+                (geom.vertexPositions[j] - geom.vertexPositions[i]).normalize();
+            Vector3 Bi = cross(Ti, Ni);
+
+            double t        = iHe / ((double)b.degree()) * 2 * M_PI * frequency;
+            boundaryData[i] = cos(t) * Ni + sin(t) * Bi;
+
+            iHe++;
+        }
+    }
+    geom.unrequireVertexNormals();
+    return boundaryData;
+}
