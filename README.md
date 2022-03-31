@@ -31,7 +31,12 @@ cmake -DCMAKE_BUILD_TYPE=Release ..
 ### Javascript Version
 This can also be compiled to Javascript via [Emscripten](https://emscripten.org/docs/getting_started/downloads.html).
 
-Once you have Emscripten installed, then building this code is just like building an ordinary `geometry-central` project. Run the following commands from the `build` directory.
+After installing Emscripten, you may need to run the following command:
+``` bash
+source ~/emsdk/emsdk_env.sh
+```
+
+Then building this code is just like building an ordinary `geometry-central` project. Run the following commands from the `build` directory.
 ``` bash
 emcmake cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=emcc -DCMAKE_CXX_COMPILER=em++ -DEMSCRIPTEN=True ..
 emmake make -j7
