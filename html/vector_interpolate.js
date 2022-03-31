@@ -3,8 +3,8 @@ import {
   Matrix4,
 } from "https://unpkg.com/three@0.125.1/build/three.module.js";
 
-// import { Geoptic } from "./geoptic.js/src/geoptic.js";
-import { Geoptic } from "./geoptic.js/build/geoptic.module.min.js";
+import { Geoptic } from "./geoptic.js/src/geoptic.js";
+// import { Geoptic } from "./geoptic.js/build/geoptic.module.min.js";
 // import { standardizeVector3Array } from "./geoptic.js/src/standardize_data_array.js";
 
 let geo = undefined;
@@ -61,6 +61,9 @@ geoptic.commandGuiFields["Load New Base Mesh"] = function () {
       geo.vertexCoordinates(),
       geo.polygons()
     );
+
+    boundaryField = Module.generateSmoothBoundaryField(geo);
+    psBaseMesh.addVertexVectorQuantity("Boundary field", boundaryField);
   });
 };
 io.add(geoptic.commandGuiFields, "Load New Base Mesh");
