@@ -6,3 +6,6 @@
 	path = deps/geometry-central
 	url = https://github.com/nmwsharp/geometry-central.git
 	branch = master
+[submodule "html/geoptic.js"]
+	path = html/geoptic.js
+	url = https://github.com/MarkGillespie/geoptic.js.git

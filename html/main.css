@@ -1,0 +1,47 @@
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    min-height: 100vh;
+}
+
+#info {
+    margin-top: 5em;
+    position: absolute;
+    width: 100%;
+    text-align: center;
+}
+
+#logo {
+    position: absolute;
+    bottom: 10px;
+    right: 40px;
+    opacity: 0.8;
+    z-index: 4;
+}
+
+#github-link {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    opacity: 0.8;
+}
+
+.octicon {
+    margin: 2em;
+}
+
+#title {
+    width: 100%;
+    text-align: center;
+    z-index: 2;         /* Put in front of demo */
+    position: absolute; /* needed for z-index to apply */
+    /* also, lets title overlap demo */
+}
+
+#geoptic-panel {
+    position:relative; /* needed to place child panels relative to this one */
+    width: 100vw;
+    height: 100vh;
+}

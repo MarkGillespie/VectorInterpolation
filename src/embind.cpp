@@ -33,6 +33,15 @@ std::vector<Vector3> toList(ManifoldSurfaceMesh& mesh,
     return vectorList;
 }
 
+VertexData<Vector3> toData(ManifoldSurfaceMesh& mesh,
+                           const std::vector<Vector3>& list) {
+    VertexData<Vector3> data(mesh);
+    for (size_t iV = 0; iV < mesh.nVertices(); iV++) {
+        data[iV] = list[iV];
+    }
+    return data;
+}
+
 std::vector<Vector3> generateSmoothBoundaryField(GeoMesh& geo) {
     VertexData<Vector3> bField =
         generateSmoothBoundaryVectorField(*geo.mesh, *geo.geom);
@@ -43,6 +52,40 @@ std::vector<Vector3> generateWavyBoundaryField(GeoMesh& geo, size_t frequency) {
     VertexData<Vector3> bField =
         generateWavyBoundaryVectorField(*geo.mesh, *geo.geom, frequency);
     return toList(*geo.mesh, bField);
+}
+
+std::vector<Vector3>
+interpolateHarmonicFunction(GeoMesh& geo,
+                            const std::vector<Vector3>& boundaryData) {
+    return toList(*geo.mesh,
+                  interpolateByHarmonicFunction(
+                      *geo.mesh, *geo.geom, toData(*geo.mesh, boundaryData)));
+}
+
+std::vector<Vector3>
+interpolateConnectionLaplacian(GeoMesh& geo,
+                               const std::vector<Vector3>& boundaryData,
+                               bool estimateNormalDirection) {
+    return toList(*geo.mesh,
+                  interpolateByConnectionLaplacian(
+                      *geo.mesh, *geo.geom, toData(*geo.mesh, boundaryData),
+                      estimateNormalDirection));
+}
+
+std::vector<Vector3>
+interpolateStereographicProjection(GeoMesh& geo,
+                                   const std::vector<Vector3>& boundaryData) {
+    return toList(*geo.mesh,
+                  interpolateByStereographicProjection(
+                      *geo.mesh, *geo.geom, toData(*geo.mesh, boundaryData)));
+}
+
+std::vector<Vector3>
+interpolateHarmonicMapToSphere(GeoMesh& geo,
+                               const std::vector<Vector3>& boundaryData) {
+    return toList(*geo.mesh,
+                  interpolateByHarmonicMapToSphere(
+                      *geo.mesh, *geo.geom, toData(*geo.mesh, boundaryData)));
 }
 
 // Stolen from Ricky Reusser https://observablehq.com/d/d0df0c04ce5c94FCC
@@ -93,4 +136,10 @@ EMSCRIPTEN_BINDINGS(my_module) {
 
     function("generateSmoothBoundaryField", &generateSmoothBoundaryField);
     function("generateWavyBoundaryField", &generateWavyBoundaryField);
+
+    function("interpolateHarmonicFunction", &interpolateHarmonicFunction);
+    function("interpolateConnectionLaplacian", &interpolateConnectionLaplacian);
+    function("interpolateStereographicProjection",
+             &interpolateStereographicProjection);
+    function("interpolateHarmonicMapToSphere", &interpolateHarmonicMapToSphere);
 }
