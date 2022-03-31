@@ -8,19 +8,23 @@ This repo provides a comparison of several different ways of interpolating 3D un
 
 ### Harmonic interpolation
 ![harmonic interpolation across hand](images/small-interpolation-harmonic.png)
+
 Interpolates the 3 coordinates of the vector field independently via harmonic functions and normalizes the resulting vector field.
 
 ### Connection Laplacian interpolation
 ![connection Laplacian interpolation across hand](images/small-interpolation-connection.png)
 ![connection Laplacian + scalar Laplaician interpolation across hand](images/small-interpolation-connection++.png)
+
 Splits the boundary data into a tangential vector field plus a normal component. The tangential field is interpolated by a harmonic tangent vector field (using the [connection Laplacian](http://geometry-central.net/surface/geometry/quantities/#vertex-connection-laplacian)). The normal component can either be chosen to make the resulting field a unit vector field, or can be interpolated separately by a separate scalar function. The latter option involves slightly more computation, but has the advantage of allowing the normal field to point into the surface and out of the surface at different points. 
 
 ### Stereographic projection
 ![stereographic interpolation across hand](images/small-interpolation-stereographic.png)
+
 Uses stereographic projection to express the given unit vectors on the boundary as 2D vectors in the plane. Then interpolates those 2D vectors harmonically across the interior of the mesh, and uses inverse stereographic projection to obtain a unit vector field on the interior of the mesh.
 
 ### Harmonic map to the sphere
 ![stereographic interpolation across hand](images/small-interpolation-harmonic-sphere.png)
+
 Computes a harmonic map to the unit sphere.
 
 
