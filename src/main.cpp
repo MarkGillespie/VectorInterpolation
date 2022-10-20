@@ -43,7 +43,6 @@ void myCallback() {
                                       interpolatedNormals)
             ->setVectorLengthScale(0.05)
             ->setVectorRadius(0.0075);
-        ;
     }
     if (ImGui::Button(
             "Interpolate by connection laplacian + scalar laplacian")) {
@@ -55,7 +54,6 @@ void myCallback() {
                 interpolatedNormals)
             ->setVectorLengthScale(0.05)
             ->setVectorRadius(0.0075);
-        ;
     }
     if (ImGui::Button("Interpolate by stereographic projection")) {
         VertexData<Vector3> interpolatedNormals =
@@ -65,7 +63,6 @@ void myCallback() {
                                       interpolatedNormals)
             ->setVectorLengthScale(0.05)
             ->setVectorRadius(0.0075);
-        ;
     }
     if (ImGui::Button("Interpolate by harmonic map to sphere")) {
         VertexData<Vector3> interpolatedNormals =
@@ -75,7 +72,16 @@ void myCallback() {
                                       interpolatedNormals)
             ->setVectorLengthScale(0.05)
             ->setVectorRadius(0.0075);
-        ;
+    }
+    if (ImGui::Button(
+            "Interpolate by harmonic map to sphere with fancy connection")) {
+        VertexData<Vector3> interpolatedNormals =
+            interpolateByHarmonicBundleSection(*mesh, *geom, boundaryData);
+        psMesh
+            ->addVertexVectorQuantity("harmonic sphere map++",
+                                      interpolatedNormals)
+            ->setVectorLengthScale(0.05)
+            ->setVectorRadius(0.0075);
     }
     ImGui::Separator();
     if (ImGui::Button("Set smooth boundary conditions")) {
@@ -83,14 +89,12 @@ void myCallback() {
         psMesh->addVertexVectorQuantity("boundary data", boundaryData)
             ->setVectorLengthScale(0.05)
             ->setVectorRadius(0.0075);
-        ;
     }
     if (ImGui::Button("Set wavy boundary conditions")) {
         boundaryData = generateWavyBoundaryVectorField(*mesh, *geom);
         psMesh->addVertexVectorQuantity("boundary data", boundaryData)
             ->setVectorLengthScale(0.05)
             ->setVectorRadius(0.0075);
-        ;
     }
 }
 
@@ -147,7 +151,8 @@ int main(int argc, char** argv) {
     psMesh->addVertexVectorQuantity("boundary data", boundaryData)
         ->setVectorLengthScale(0.05)
         ->setVectorRadius(0.0075);
-    ;
+
+    // checkSphericalDirichletGradient(*mesh, *geom, boundaryData);
 
     // Give control to the polyscope gui
     polyscope::show();

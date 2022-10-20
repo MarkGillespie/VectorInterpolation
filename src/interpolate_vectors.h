@@ -31,6 +31,11 @@ VertexData<Vector3>
 interpolateByHarmonicMapToSphere(ManifoldSurfaceMesh& mesh,
                                  VertexPositionGeometry& geom,
                                  const VertexData<Vector3>& boundaryData);
+VertexData<Vector3>
+interpolateByHarmonicBundleSection(ManifoldSurfaceMesh& mesh,
+                                   VertexPositionGeometry& geom,
+                                   const VertexData<Vector3>& boundaryData);
+
 //== Misc helpers
 Vector2 projectStereographic(Vector3 v);
 Vector3 unprojectStereographic(Vector2 v);
@@ -38,17 +43,31 @@ Vector3 unprojectStereographic(Vector2 v);
 double computeSphericalDirichletEnergy(ManifoldSurfaceMesh& mesh,
                                        VertexPositionGeometry& geom,
                                        const VertexData<Vector3>& f);
+double computeSphericalDirichletEnergy(
+    ManifoldSurfaceMesh& mesh, VertexPositionGeometry& geom,
+    const VertexData<Vector3>& f,
+    const HalfedgeData<Eigen::Matrix3d>& connection);
 
 VertexData<Vector3>
 computeSphericalDirichletGradient(ManifoldSurfaceMesh& mesh,
                                   VertexPositionGeometry& geom,
                                   const VertexData<Vector3>& f);
+VertexData<Vector3> computeSphericalDirichletGradient(
+    ManifoldSurfaceMesh& mesh, VertexPositionGeometry& geom,
+    const VertexData<Vector3>& f,
+    const HalfedgeData<Eigen::Matrix3d>& connection);
 
 VertexData<Vector3> preconditionSphericalDirichletGradient(
     ManifoldSurfaceMesh& mesh, VertexPositionGeometry& geom,
     const VertexData<Vector3>& f, const VertexData<Vector3>& grad,
     PositiveDefiniteSolver<double>& interiorLaplacianSolver,
-    BlockDecompositionResult<double>&);
+    BlockDecompositionResult<double>& LaplacianDecomp);
+
+VertexData<Vector3> preconditionSphericalDirichletGradientWithConnection(
+    ManifoldSurfaceMesh& mesh, VertexPositionGeometry& geom,
+    const VertexData<Vector3>& f, const VertexData<Vector3>& grad,
+    PositiveDefiniteSolver<double>& connectionLaplacianSolver,
+    BlockDecompositionResult<double>& LaplacianDecomp);
 
 VertexData<Vector3> takeSphericalStep(ManifoldSurfaceMesh& mesh,
                                       VertexPositionGeometry& geom,
@@ -66,3 +85,18 @@ VertexData<Vector3>
 generateWavyBoundaryVectorField(ManifoldSurfaceMesh& mesh,
                                 VertexPositionGeometry& geom,
                                 size_t frequency = 1);
+
+// Make a matrix whose columns are the input vectors
+Eigen::Matrix3d toFrame(Vector3 v1, Vector3 v2, Vector3 v3);
+Eigen::Vector3d toEigen(Vector3 v);
+Vector3 fromEigen(Eigen::Vector3d v);
+double angle(Eigen::Vector3d a, Eigen::Vector3d b);
+
+SparseMatrix<double>
+buildConnectionLaplacian(ManifoldSurfaceMesh& mesh,
+                         VertexPositionGeometry& geom,
+                         const HalfedgeData<Eigen::Matrix3d>& connection);
+
+void checkSphericalDirichletGradient(ManifoldSurfaceMesh& mesh,
+                                     VertexPositionGeometry& geom,
+                                     VertexData<Vector3> boundaryData);

@@ -271,6 +271,109 @@ interpolateByHarmonicMapToSphere(ManifoldSurfaceMesh& mesh,
     return f;
 }
 
+VertexData<Vector3>
+interpolateByHarmonicBundleSection(ManifoldSurfaceMesh& mesh,
+                                   VertexPositionGeometry& geom,
+                                   const VertexData<Vector3>& boundaryData) {
+
+    geom.requireVertexIndices();
+    geom.requireVertexTangentBasis();
+    geom.requireTransportVectorsAlongHalfedge();
+
+    HalfedgeData<Eigen::Matrix3d> sphereConnection(mesh);
+    for (Halfedge ij : mesh.halfedges()) {
+        Vector2 rij = geom.transportVectorsAlongHalfedge[ij];
+        Eigen::Matrix3d R;
+        R << rij.x, -rij.y, 0, rij.y, rij.x, 0, 0, 0, 1;
+        sphereConnection[ij] = R;
+    }
+
+    VertexData<size_t>& vIdx = geom.vertexIndices;
+    Vector<bool> isInterior =
+        Vector<bool>::Constant(3 * mesh.nVertices(), true);
+
+    VertexData<Vector3> intrinsicBoundaryData(mesh, Vector3::zero());
+    size_t nB = 0;
+    for (BoundaryLoop b : mesh.boundaryLoops()) {
+        for (Vertex v : b.adjacentVertices()) {
+            for (size_t d = 0; d < 3; d++) isInterior(3 * vIdx[v] + d) = false;
+            nB++;
+
+            Vector3 T0 = geom.vertexTangentBasis[v][0];
+            Vector3 T1 = geom.vertexTangentBasis[v][1];
+            Vector3 N  = cross(T0, T1);
+
+            intrinsicBoundaryData[v][0] = dot(boundaryData[v], T0);
+            intrinsicBoundaryData[v][1] = dot(boundaryData[v], T1);
+            intrinsicBoundaryData[v][2] = dot(boundaryData[v], N);
+        }
+    }
+
+    VertexData<Vector3> f =
+        interpolateByHarmonicFunction(mesh, geom, intrinsicBoundaryData);
+
+    SparseMatrix<double> bundleConnectionLaplacian =
+        buildConnectionLaplacian(mesh, geom, sphereConnection);
+
+    BlockDecompositionResult<double> decomp =
+        blockDecomposeSquare(bundleConnectionLaplacian, isInterior);
+
+    PositiveDefiniteSolver<double> Lsolve(decomp.AA);
+
+    VertexData<Vector3> grad =
+        computeSphericalDirichletGradient(mesh, geom, f, sphereConnection);
+    size_t steps = 0;
+    while (norm(grad) > 1e-5 && steps < 25) {
+        VertexData<Vector3> stepDir =
+            preconditionSphericalDirichletGradientWithConnection(
+                mesh, geom, f, grad, Lsolve, decomp);
+
+        double stepSize = 5;
+
+        VertexData<Vector3> newF =
+            takeSphericalStep(mesh, geom, f, stepDir, stepSize);
+
+        double oldEnergy =
+            computeSphericalDirichletEnergy(mesh, geom, f, sphereConnection);
+        double newEnergy =
+            computeSphericalDirichletEnergy(mesh, geom, newF, sphereConnection);
+
+        while (stepSize > 1e-8 &&
+               (!std::isfinite(newEnergy) || oldEnergy < newEnergy)) {
+            stepSize /= 2;
+
+            newF      = takeSphericalStep(mesh, geom, f, stepDir, stepSize);
+            newEnergy = computeSphericalDirichletEnergy(mesh, geom, newF,
+                                                        sphereConnection);
+        }
+
+
+        f = newF;
+        grad =
+            computeSphericalDirichletGradient(mesh, geom, f, sphereConnection);
+
+        std::cout << steps << "\t" << newEnergy << "\t" << norm(grad) << "\t"
+                  << stepSize << std::endl;
+
+        steps++;
+    }
+
+
+    VertexData<Vector3> extrinsicField(mesh);
+    for (Vertex v : mesh.vertices()) {
+        Vector3 T0        = geom.vertexTangentBasis[v][0];
+        Vector3 T1        = geom.vertexTangentBasis[v][1];
+        Vector3 N         = cross(T0, T1);
+        extrinsicField[v] = f[v].x * T0 + f[v].y * T1 + f[v].z * N;
+    }
+
+    geom.unrequireVertexIndices();
+    geom.unrequireVertexTangentBasis();
+    geom.unrequireTransportVectorsAlongHalfedge();
+
+    return extrinsicField;
+}
+
 Vector2 projectStereographic(Vector3 v) {
     v = v.normalize();
     return Vector2{v.x, v.y} / (1 - v.z);
@@ -298,6 +401,25 @@ double computeSphericalDirichletEnergy(ManifoldSurfaceMesh& mesh,
     return energy;
 }
 
+double computeSphericalDirichletEnergy(
+    ManifoldSurfaceMesh& mesh, VertexPositionGeometry& geom,
+    const VertexData<Vector3>& f,
+    const HalfedgeData<Eigen::Matrix3d>& connection) {
+    geom.requireEdgeCotanWeights();
+
+    double energy = 0;
+    for (Edge e : mesh.edges()) {
+        Eigen::Matrix3d Rij = connection[e.halfedge()];
+        Eigen::Vector3d fi  = Rij * toEigen(f[e.halfedge().tailVertex()]);
+        Eigen::Vector3d fj  = toEigen(f[e.halfedge().tipVertex()]);
+        energy += geom.edgeCotanWeights[e] * pow(angle(fi, fj), 2) / 2.;
+    }
+
+    geom.unrequireEdgeCotanWeights();
+
+    return energy;
+}
+
 VertexData<Vector3>
 computeSphericalDirichletGradient(ManifoldSurfaceMesh& mesh,
                                   VertexPositionGeometry& geom,
@@ -311,7 +433,45 @@ computeSphericalDirichletGradient(ManifoldSurfaceMesh& mesh,
             for (Halfedge ij : i.outgoingHalfedges()) {
                 Vector3 fj = f[ij.tipVertex()];
 
-                // Normal vector of triangle containing the origin, fj, and fi
+                // Normal vector of triangle containing the origin, fj, and
+                // fi
+                Vector3 N = cross(fj, fi);
+
+                // Tangent vector pointing from fi to fj
+                Vector3 T = (-cross(N, fi));
+                T         = T.normalize();
+                if (T != T) {
+                    T = Vector3::zero();
+                }
+
+                grad[i] -= geom.edgeCotanWeights[ij.edge()] * angle(fi, fj) * T;
+            }
+        }
+    }
+
+    geom.unrequireEdgeCotanWeights();
+
+    return grad;
+}
+
+VertexData<Vector3> computeSphericalDirichletGradient(
+    ManifoldSurfaceMesh& mesh, VertexPositionGeometry& geom,
+    const VertexData<Vector3>& f,
+    const HalfedgeData<Eigen::Matrix3d>& connection) {
+    geom.requireEdgeCotanWeights();
+
+    VertexData<Vector3> grad(mesh, Vector3::zero());
+    for (Vertex i : mesh.vertices()) {
+        Vector3 fi = f[i];
+        if (!i.isBoundary()) {
+            for (Halfedge ij : i.outgoingHalfedges()) {
+
+                Eigen::Matrix3d Rji = connection[ij.twin()];
+
+                Vector3 fj = fromEigen(Rji * toEigen(f[ij.tipVertex()]));
+
+                // Normal vector of triangle containing the origin, fj, and
+                // fi
                 Vector3 N = cross(fj, fi);
 
                 // Tangent vector pointing from fi to fj
@@ -336,7 +496,6 @@ VertexData<Vector3> preconditionSphericalDirichletGradient(
     const VertexData<Vector3>& f, const VertexData<Vector3>& grad,
     PositiveDefiniteSolver<double>& interiorLaplacianSolver,
     BlockDecompositionResult<double>& LaplacianDecomp) {
-
     size_t nInteriorVertices = LaplacianDecomp.origIndsA.rows();
 
     geom.requireVertexIndices();
@@ -375,12 +534,54 @@ VertexData<Vector3> preconditionSphericalDirichletGradient(
     return step;
 }
 
+VertexData<Vector3> preconditionSphericalDirichletGradientWithConnection(
+    ManifoldSurfaceMesh& mesh, VertexPositionGeometry& geom,
+    const VertexData<Vector3>& f, const VertexData<Vector3>& grad,
+    PositiveDefiniteSolver<double>& connectionLaplacianSolver,
+    BlockDecompositionResult<double>& LaplacianDecomp) {
+
+    size_t nInteriorVertices = LaplacianDecomp.origIndsA.rows();
+
+    geom.requireVertexIndices();
+    VertexData<size_t>& vIdx = geom.vertexIndices;
+
+    //== Solve L * x = grad;
+    Vector<double> interiorGrad(nInteriorVertices);
+
+    for (Vertex v : mesh.vertices()) {
+        if (!v.isBoundary()) {
+            interiorGrad(LaplacianDecomp.newInds(3 * vIdx[v]))     = grad[v].x;
+            interiorGrad(LaplacianDecomp.newInds(3 * vIdx[v]) + 1) = grad[v].y;
+            interiorGrad(LaplacianDecomp.newInds(3 * vIdx[v]) + 2) = grad[v].z;
+        }
+    }
+
+    Vector<double> interiorStep =
+        connectionLaplacianSolver.solve(-interiorGrad);
+
+    //== Collect results and project onto tangent space of sphere
+
+    VertexData<Vector3> step(mesh, Vector3::zero());
+    for (Vertex v : mesh.vertices()) {
+        if (!v.isBoundary()) {
+            step[v] =
+                Vector3{interiorStep(LaplacianDecomp.newInds(3 * vIdx[v])),
+                        interiorStep(LaplacianDecomp.newInds(3 * vIdx[v] + 1)),
+                        interiorStep(LaplacianDecomp.newInds(3 * vIdx[v] + 2))};
+            step[v] -= dot(step[v], f[v]) * f[v];
+        }
+    }
+
+    geom.unrequireVertexIndices();
+
+    return step;
+}
+
 VertexData<Vector3> takeSphericalStep(ManifoldSurfaceMesh& mesh,
                                       VertexPositionGeometry& geom,
                                       const VertexData<Vector3>& f,
                                       const VertexData<Vector3>& stepDir,
                                       double stepSize) {
-
     VertexData<Vector3> result = f;
 
     for (Vertex i : mesh.vertices()) {
@@ -452,4 +653,130 @@ VertexData<Vector3> generateWavyBoundaryVectorField(
     }
     geom.unrequireVertexNormals();
     return boundaryData;
+}
+
+Eigen::Matrix3d toFrame(Vector3 v1, Vector3 v2, Vector3 v3) {
+    Eigen::Matrix3d F;
+    F << v1.x, v2.x, v3.x, v1.y, v2.y, v3.y, v1.z, v2.z, v3.z;
+    return F;
+}
+
+Eigen::Vector3d toEigen(Vector3 v) { return Eigen::Vector3d(v.x, v.y, v.z); }
+Vector3 fromEigen(Eigen::Vector3d v) { return {v(0), v(1), v(2)}; }
+
+double angle(Eigen::Vector3d a, Eigen::Vector3d b) {
+    return std::acos(
+        std::fmax(-1., std::fmin(1., a.dot(b) / (a.norm() * b.norm()))));
+}
+
+SparseMatrix<double>
+buildConnectionLaplacian(ManifoldSurfaceMesh& mesh,
+                         VertexPositionGeometry& geom,
+                         const HalfedgeData<Eigen::Matrix3d>& connection) {
+    geom.requireVertexIndices();
+    geom.requireEdgeCotanWeights();
+
+    std::vector<Eigen::Triplet<double>> T;
+
+    for (Edge e : mesh.edges()) {
+        size_t i = geom.vertexIndices[e.halfedge().tailVertex()];
+        size_t j = geom.vertexIndices[e.halfedge().tipVertex()];
+
+        Eigen::Matrix3d Rji = connection[e.halfedge().twin()];
+        double w            = geom.edgeCotanWeights[e];
+
+        for (size_t di = 0; di < 3; di++) {
+            T.emplace_back(3 * i + di, 3 * i + di, w);
+            T.emplace_back(3 * j + di, 3 * j + di, w);
+            for (size_t dj = 0; dj < 3; dj++) {
+                T.emplace_back(3 * i + di, 3 * j + dj, -w * Rji(di, dj));
+                T.emplace_back(3 * j + dj, 3 * i + di, -w * Rji(di, dj));
+            }
+        }
+    }
+
+    geom.unrequireVertexIndices();
+    geom.unrequireEdgeCotanWeights();
+
+    Eigen::SparseMatrix<double> L(3 * mesh.nVertices(), 3 * mesh.nVertices());
+    L.setFromTriplets(T.begin(), T.end());
+    return L;
+}
+
+void checkSphericalDirichletGradient(ManifoldSurfaceMesh& mesh,
+                                     VertexPositionGeometry& geom,
+                                     VertexData<Vector3> boundaryData) {
+
+    geom.requireTransportVectorsAlongHalfedge();
+    HalfedgeData<Eigen::Matrix3d> sphereConnection(mesh);
+    for (Halfedge ij : mesh.halfedges()) {
+        Vector2 rij = geom.transportVectorsAlongHalfedge[ij];
+        Eigen::Matrix3d R;
+        R << rij.x, -rij.y, 0, rij.y, rij.x, 0, 0, 0, 1;
+        sphereConnection[ij] = R;
+    }
+
+    geom.requireVertexTangentBasis();
+    VertexData<Eigen::Matrix3d> extrinsicFrame(mesh);
+    VertexData<Vector3> T0(mesh);
+    for (Vertex v : mesh.vertices()) {
+        Vector3 T0        = geom.vertexTangentBasis[v][0];
+        Vector3 T1        = geom.vertexTangentBasis[v][1];
+        Vector3 N         = cross(T0, T1);
+        extrinsicFrame[v] = toFrame(T0, T1, N);
+    }
+
+    // for (Halfedge ij : mesh.halfedges()) {
+    //     Vertex i = ij.tailVertex();
+    //     Vertex j = ij.tipVertex();
+    //     Eigen::Matrix3d finite_diff =
+    //         extrinsicFrame[j] * extrinsicFrame[i].transpose();
+    //     Eigen::Matrix3d Rij = sphereConnection[ij];
+    //     if ((finite_diff - Rij).norm() > 1e-8) {
+    //         std::cout << finite_diff << std::endl
+    //                   << std::endl
+    //                   << Rij << std::endl
+    //                   << std::endl
+    //                   << extrinsicFrame[i] << std::endl
+    //                   << std::endl
+    //                   << extrinsicFrame[j] << std::endl;
+    //         std::cout << (finite_diff - Rij).norm() << std::endl;
+    //         exit(1);
+    //     }
+    // }
+
+    VertexData<Vector3> f =
+        interpolateByHarmonicFunction(mesh, geom, boundaryData);
+
+    double h = 1e-8;
+    double origEnergy =
+        computeSphericalDirichletEnergy(mesh, geom, f, sphereConnection);
+    VertexData<Vector3> origGrad =
+        computeSphericalDirichletGradient(mesh, geom, f, sphereConnection);
+    for (size_t i = 0; i < 25; i++) {
+        VertexData<Vector3> perturbation(mesh);
+        for (Vertex v : mesh.vertices()) {
+            if (v.isBoundary()) {
+                perturbation[v] = Vector3::zero();
+            } else {
+                perturbation[v] = Vector3{randomReal(-1, 1), randomReal(-1, 1),
+                                          randomReal(-1, 1)};
+                perturbation[v] -= dot(perturbation[v], f[v]) * f[v];
+            }
+        }
+
+        VertexData<Vector3> newF =
+            takeSphericalStep(mesh, geom, f, perturbation, h);
+        double newEnergy =
+            computeSphericalDirichletEnergy(mesh, geom, newF, sphereConnection);
+
+        double finite_diff   = (newEnergy - origEnergy) / h;
+        double analytic_diff = dot(origGrad, perturbation);
+
+        if (!(abs(finite_diff - analytic_diff) < 1e-3 * abs(analytic_diff))) {
+            std::cout << finite_diff << " " << analytic_diff << " "
+                      << abs(analytic_diff - finite_diff) << std::endl;
+            exit(1);
+        }
+    }
 }
