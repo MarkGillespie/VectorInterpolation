@@ -98,16 +98,18 @@ VertexData<Vector3> interpolateByConnectionLaplacian(
         solvePositiveDefinite(decomp.AA, rhs);
 
     Vector<double> solutionNormals;
+    BlockDecompositionResult<double> scalarDecomp;
     if (estimateNormalDirection) {
         geom.requireCotanLaplacian();
-        BlockDecompositionResult<double> scalarDecomp =
-            blockDecomposeSquare(geom.cotanLaplacian, decomp.isA);
+        scalarDecomp = blockDecomposeSquare(geom.cotanLaplacian, decomp.isA);
         Vector<double> scalarRHS = -scalarDecomp.AB * boundaryNormals;
         solutionNormals = solvePositiveDefinite(scalarDecomp.AA, scalarRHS);
         geom.unrequireCotanLaplacian();
     }
 
     VertexData<Vector3> solutionData = boundaryData;
+    VertexData<Vector2> intrinsicSolution(mesh);
+    VertexData<Vector3> intrinsicTangentBasisX(mesh);
     for (Vertex v : mesh.vertices()) {
         if (isInterior(vIdx[v])) {
             Vector2 intrinsicVec =
@@ -134,8 +136,26 @@ VertexData<Vector3> interpolateByConnectionLaplacian(
             Vector3 N  = cross(T0, T1);
             solutionData[v] =
                 intrinsicVec[0] * T0 + intrinsicVec[1] * T1 + z * N;
+            intrinsicSolution[v] = intrinsicVec;
+        } else {
+            intrinsicSolution[v] = Vector2::fromComplex(
+                intrinsicBoundary(decomp.newInds(vIdx[v])));
         }
+        intrinsicTangentBasisX[v] = geom.vertexTangentBasis[v][0];
     }
+
+    polyscope::getSurfaceMesh("mesh")->setVertexTangentBasisX(
+        intrinsicTangentBasisX);
+    polyscope::getSurfaceMesh("mesh")
+        ->addVertexIntrinsicVectorQuantity("intrinsic interpolation",
+                                           intrinsicSolution)
+        ->setVectorLengthScale(0.05)
+        ->setVectorRadius(0.0075);
+    ;
+    Vector<double> fullNormals =
+        reassembleVector(scalarDecomp, solutionNormals, boundaryNormals);
+    polyscope::getSurfaceMesh("mesh")->addVertexScalarQuantity("normals",
+                                                               fullNormals);
 
     geom.requireVertexConnectionLaplacian();
     geom.requireVertexTangentBasis();

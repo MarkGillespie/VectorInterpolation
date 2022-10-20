@@ -6,6 +6,8 @@
 #include "geometrycentral/surface/meshio.h"
 #include "geometrycentral/surface/vertex_position_geometry.h"
 
+#include "polyscope/surface_mesh.h"
+
 using namespace geometrycentral;
 using namespace geometrycentral::surface;
 
